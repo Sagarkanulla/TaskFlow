@@ -44,9 +44,11 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      {notifications.length > 0 && (
-        <section className="rounded-lg border border-blue-100 bg-blue-50 p-6">
-          <h2 className="text-lg font-black flex items-center gap-2 mb-4 text-blue-900"><Bell size={18} /> Notifications</h2>
+      <section className="rounded-lg border border-blue-100 bg-blue-50 p-6">
+        <h2 className="text-lg font-black flex items-center gap-2 mb-4 text-blue-900"><Bell size={18} /> Alerts</h2>
+        {notifications.length === 0 ? (
+          <div className="text-sm text-blue-600 font-semibold">No new alerts. You're all caught up!</div>
+        ) : (
           <div className="space-y-2">
             {notifications.map(notif => (
               <div key={notif.id} className="flex items-center justify-between bg-white p-3 rounded shadow-sm border border-blue-100">
@@ -61,8 +63,8 @@ export default function Dashboard() {
               </div>
             ))}
           </div>
-        </section>
-      )}
+        )}
+      </section>
 
       <section className="overflow-hidden rounded-lg border border-white/10 bg-white text-gray-950 shadow-2xl">
         <div className="grid gap-0 lg:grid-cols-[1.2fr_0.8fr]">

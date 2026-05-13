@@ -15,6 +15,7 @@ export default function ProjectDetail() {
   const [showMember, setShowMember] = useState(false);
   const [taskForm, setTaskForm] = useState(emptyTask);
   const [memberEmail, setMemberEmail] = useState('');
+  const [memberUserId, setMemberUserId] = useState('');
   const [reports, setReports] = useState({});
   const [commentText, setCommentText] = useState({});
   const [subtaskTitle, setSubtaskTitle] = useState({});
@@ -105,10 +106,18 @@ export default function ProjectDetail() {
   const addMember = async (event) => {
     event.preventDefault();
     try {
-      await api.post(`/projects/${id}/members`, { email: memberEmail.trim().toLowerCase() });
+      if (memberUserId) {
+        await api.post(`/projects/${id}/members`, { userId: memberUserId });
+      } else if (memberEmail) {
+        await api.post(`/projects/${id}/members`, { email: memberEmail.trim().toLowerCase() });
+      } else {
+        toast.error('Select an employee or enter an email');
+        return;
+      }
       toast.success('Member added');
       setShowMember(false);
       setMemberEmail('');
+      setMemberUserId('');
       load();
     } catch (err) {
       toast.error(err.response?.data?.error || 'Create that user first, then add their email here');
@@ -486,10 +495,19 @@ export default function ProjectDetail() {
       {showMember && (
         <Modal onClose={() => setShowMember(false)}>
           <form onSubmit={addMember}>
-            <h2 className="mb-1 text-2xl font-black">Add Member</h2>
-            <p className="mb-5 text-sm text-gray-500">Enter a registered user&apos;s real email. New users should sign up first.</p>
-            <input type="email" className="input-field mb-4" placeholder="teammate@company.com" value={memberEmail} onChange={(event) => setMemberEmail(event.target.value)} required />
-            <button className="btn-primary w-full py-3">Add Member</button>
+            <h2 className="mb-1 text-2xl font-black">Add Project Member</h2>
+            <p className="mb-5 text-sm text-gray-500">Quickly add available company employees, or invite external/new users by email.</p>
+            <select className="input-field mb-4" value={memberUserId} onChange={(e) => setMemberUserId(e.target.value)}>
+              <option value="">Select company employee...</option>
+              {(project.companyPeople || []).filter(p => !projectMemberIds.has(p.id)).map(person => (
+                <option key={person.id} value={person.id}>{person.name} ({person.designation.replace('_', ' ')})</option>
+              ))}
+            </select>
+            <div className="flex items-center justify-center mb-4">
+              <span className="text-xs text-gray-400 font-bold uppercase">Or</span>
+            </div>
+            <input type="email" className="input-field mb-4" placeholder="External teammate email" value={memberEmail} onChange={(event) => setMemberEmail(event.target.value)} />
+            <button type="submit" className="btn-primary w-full py-3" disabled={!memberUserId && !memberEmail}>Add to Project</button>
           </form>
         </Modal>
       )}
