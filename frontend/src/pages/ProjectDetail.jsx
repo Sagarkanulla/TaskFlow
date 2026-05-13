@@ -30,7 +30,7 @@ export default function ProjectDetail() {
   }, [id]);
 
   const isAdmin = project?.myRole === 'ADMIN';
-  const canManagePeople = isAdmin && project?.myDesignation === 'MANAGER';
+  const canManagePeople = isAdmin;
 
   const createTask = async (event) => {
     event.preventDefault();
