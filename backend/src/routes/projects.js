@@ -73,7 +73,9 @@ router.get('/:projectId', requireProjectRole(['ADMIN', 'MEMBER']), async (req, r
               take: 3,
               orderBy: { createdAt: 'desc' },
               include: { user: { select: { id: true, name: true, designation: true } } }
-            }
+            },
+            subtasks: { orderBy: { createdAt: 'asc' } },
+            comments: { orderBy: { createdAt: 'asc' }, include: { user: { select: { id: true, name: true } } } }
           },
           orderBy: { createdAt: 'desc' }
         }

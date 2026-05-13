@@ -25,6 +25,8 @@ model User {
   assignedTasks Task[]       @relation("AssignedTo")
   ownedProjects Project[]    @relation("ProjectOwner")
   taskReports   TaskReport[]
+  comments      Comment[]
+  notifications Notification[]
   uploadedFiles TaskAttachment[]
   createdAt     DateTime     @default(now())
 
@@ -81,6 +83,8 @@ model Task {
   creatorId   String
   creator     User      @relation("CreatedBy", fields: [creatorId], references: [id])
   reports     TaskReport[]
+  comments    Comment[]
+  subtasks    Subtask[]
   attachments TaskAttachment[]
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -109,6 +113,35 @@ model TaskAttachment {
   mimeType  String
   size      Int
   data      Bytes
+  createdAt DateTime @default(now())
+}
+
+model Subtask {
+  id        String   @id @default(uuid())
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  title     String
+  isDone    Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model Comment {
+  id        String   @id @default(uuid())
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  text      String
+  createdAt DateTime @default(now())
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  message   String
+  isRead    Boolean  @default(false)
+  link      String?
   createdAt DateTime @default(now())
 }
 

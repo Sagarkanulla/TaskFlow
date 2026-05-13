@@ -47,6 +47,14 @@ const attachmentSchema = z.object({
   data: z.string().min(1)
 });
 
+const commentSchema = z.object({
+  text: z.string().min(1)
+});
+
+const subtaskSchema = z.object({
+  title: z.string().min(1)
+});
+
 router.get('/dashboard', async (req, res, next) => {
   try {
     const userId = req.user.id;
@@ -127,9 +135,21 @@ router.post('/', async (req, res, next) => {
       },
       include: {
         assignee: { select: { id: true, name: true, email: true, employeeId: true, position: true, designation: true } },
-        creator: { select: { id: true, name: true } }
+        creator: { select: { id: true, name: true } },
+        project: { select: { id: true, name: true } }
       }
     });
+
+    if (task.assigneeId && task.assigneeId !== req.user.id) {
+      await prisma.notification.create({
+        data: {
+          userId: task.assigneeId,
+          message: `You were assigned a new task in ${task.project.name}: ${task.title}`,
+          link: `/projects/${task.projectId}`
+        }
+      });
+    }
+
     res.json(task);
   } catch (err) {
     next(err);
@@ -165,10 +185,24 @@ router.patch('/:id', async (req, res, next) => {
       include: {
         assignee: { select: { id: true, name: true, email: true, employeeId: true, position: true, designation: true } },
         creator: { select: { id: true, name: true } },
+        project: { select: { id: true, name: true, ownerId: true } },
         attachments: { select: { id: true, filename: true, mimeType: true, size: true, createdAt: true } },
-        reports: { orderBy: { createdAt: 'desc' }, include: { user: { select: { id: true, name: true, designation: true } } } }
+        reports: { orderBy: { createdAt: 'desc' }, include: { user: { select: { id: true, name: true, designation: true } } } },
+        subtasks: { orderBy: { createdAt: 'asc' } },
+        comments: { orderBy: { createdAt: 'asc' }, include: { user: { select: { id: true, name: true } } } }
       }
     });
+
+    if (parse.data.assigneeId && parse.data.assigneeId !== task.assigneeId && parse.data.assigneeId !== req.user.id) {
+      await prisma.notification.create({
+        data: {
+          userId: parse.data.assigneeId,
+          message: `You were assigned a task in ${updated.project.name}: ${updated.title}`,
+          link: `/projects/${updated.projectId}`
+        }
+      });
+    }
+
     res.json(updated);
   } catch (err) {
     next(err);
@@ -202,6 +236,19 @@ router.post('/:id/reports', async (req, res, next) => {
         technologies: parse.data.technologies ?? task.technologies
       }
     });
+
+    if (parse.data.issues && parse.data.issues.toLowerCase().includes('block')) {
+      const project = await prisma.project.findUnique({ where: { id: task.projectId }, select: { ownerId: true, name: true } });
+      if (project && project.ownerId !== req.user.id) {
+        await prisma.notification.create({
+          data: {
+            userId: project.ownerId,
+            message: `Blocker reported on task "${task.title}" in ${project.name}`,
+            link: `/projects/${task.projectId}`
+          }
+        });
+      }
+    }
 
     res.json(report);
   } catch (err) {
@@ -275,6 +322,103 @@ router.delete('/:id', async (req, res, next) => {
     if (!membership || membership.role !== 'ADMIN') return res.status(403).json({ error: 'Admin only' });
 
     await prisma.task.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/:id/comments', async (req, res, next) => {
+  try {
+    const task = await prisma.task.findUnique({ where: { id: req.params.id } });
+    if (!task) return res.status(404).json({ error: 'Task not found' });
+
+    const membership = await prisma.membership.findUnique({
+      where: { userId_projectId: { userId: req.user.id, projectId: task.projectId } }
+    });
+    if (!membership) return res.status(403).json({ error: 'Forbidden' });
+
+    const parse = commentSchema.safeParse(req.body);
+    if (!parse.success) return res.status(400).json({ error: parse.error.errors[0].message });
+
+    const comment = await prisma.comment.create({
+      data: {
+        taskId: task.id,
+        userId: req.user.id,
+        text: parse.data.text
+      },
+      include: { user: { select: { id: true, name: true } } }
+    });
+
+    if (task.assigneeId && task.assigneeId !== req.user.id) {
+      await prisma.notification.create({
+        data: {
+          userId: task.assigneeId,
+          message: `New comment on your task: ${task.title}`,
+          link: `/projects/${task.projectId}`
+        }
+      });
+    }
+
+    res.json(comment);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/:id/subtasks', async (req, res, next) => {
+  try {
+    const task = await prisma.task.findUnique({ where: { id: req.params.id } });
+    if (!task) return res.status(404).json({ error: 'Task not found' });
+
+    const membership = await prisma.membership.findUnique({
+      where: { userId_projectId: { userId: req.user.id, projectId: task.projectId } }
+    });
+    if (!membership) return res.status(403).json({ error: 'Forbidden' });
+
+    const parse = subtaskSchema.safeParse(req.body);
+    if (!parse.success) return res.status(400).json({ error: parse.error.errors[0].message });
+
+    const subtask = await prisma.subtask.create({
+      data: { taskId: task.id, title: parse.data.title }
+    });
+    res.json(subtask);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.patch('/:id/subtasks/:subId', async (req, res, next) => {
+  try {
+    const task = await prisma.task.findUnique({ where: { id: req.params.id } });
+    if (!task) return res.status(404).json({ error: 'Task not found' });
+
+    const membership = await prisma.membership.findUnique({
+      where: { userId_projectId: { userId: req.user.id, projectId: task.projectId } }
+    });
+    if (!membership) return res.status(403).json({ error: 'Forbidden' });
+
+    const subtask = await prisma.subtask.update({
+      where: { id: req.params.subId },
+      data: { isDone: req.body.isDone }
+    });
+    res.json(subtask);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete('/:id/subtasks/:subId', async (req, res, next) => {
+  try {
+    const task = await prisma.task.findUnique({ where: { id: req.params.id } });
+    if (!task) return res.status(404).json({ error: 'Task not found' });
+
+    const membership = await prisma.membership.findUnique({
+      where: { userId_projectId: { userId: req.user.id, projectId: task.projectId } }
+    });
+    if (!membership) return res.status(403).json({ error: 'Forbidden' });
+
+    await prisma.subtask.delete({ where: { id: req.params.subId } });
     res.json({ success: true });
   } catch (err) {
     next(err);

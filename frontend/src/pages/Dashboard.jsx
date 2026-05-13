@@ -1,16 +1,18 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertCircle, ArrowUpRight, CheckCircle2, Clock3, FolderKanban, ListTodo, TimerReset } from 'lucide-react';
+import { AlertCircle, ArrowUpRight, CheckCircle2, Clock3, FolderKanban, ListTodo, TimerReset, Bell } from 'lucide-react';
 import api from '../api';
 
 export default function Dashboard() {
   const [data, setData] = useState(null);
   const [company, setCompany] = useState(null);
   const [quickNotes, setQuickNotes] = useState({});
+  const [notifications, setNotifications] = useState([]);
 
   const load = () => {
     api.get('/tasks/dashboard').then((response) => setData(response.data));
     api.get('/company').then((response) => setCompany(response.data)).catch(() => setCompany(null));
+    api.get('/users/notifications').then((response) => setNotifications(response.data)).catch(() => setNotifications([]));
   };
 
   useEffect(() => {
@@ -33,8 +35,35 @@ export default function Dashboard() {
     load();
   };
 
+  const markAsRead = async (id) => {
+    try {
+      await api.post(`/users/notifications/${id}/read`);
+      setNotifications(n => n.filter(x => x.id !== id));
+    } catch (err) {}
+  };
+
   return (
     <div className="space-y-6">
+      {notifications.length > 0 && (
+        <section className="rounded-lg border border-blue-100 bg-blue-50 p-6">
+          <h2 className="text-lg font-black flex items-center gap-2 mb-4 text-blue-900"><Bell size={18} /> Notifications</h2>
+          <div className="space-y-2">
+            {notifications.map(notif => (
+              <div key={notif.id} className="flex items-center justify-between bg-white p-3 rounded shadow-sm border border-blue-100">
+                <div className="flex-1">
+                  <div className="text-sm font-semibold text-gray-800">{notif.message}</div>
+                  <div className="text-xs text-gray-400">{new Date(notif.createdAt).toLocaleString()}</div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {notif.link && <Link to={notif.link} className="btn-secondary px-3 py-1.5 text-xs">View</Link>}
+                  <button onClick={() => markAsRead(notif.id)} className="btn-primary px-3 py-1.5 text-xs">Dismiss</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       <section className="overflow-hidden rounded-lg border border-white/10 bg-white text-gray-950 shadow-2xl">
         <div className="grid gap-0 lg:grid-cols-[1.2fr_0.8fr]">
           <div className="p-7 md:p-8">

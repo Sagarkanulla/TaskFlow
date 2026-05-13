@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { CalendarDays, CheckCircle2, Clock3, FileUp, Flag, Plus, Trash2, UserMinus, UserPlus, Users } from 'lucide-react';
+import { CalendarDays, CheckCircle2, Clock3, FileUp, Flag, Plus, Trash2, UserMinus, UserPlus, Users, MessageSquare, CheckSquare, Search, Filter } from 'lucide-react';
+import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import api from '../api';
 
 const STATUSES = ['TODO', 'IN_PROGRESS', 'DONE'];
@@ -15,6 +16,11 @@ export default function ProjectDetail() {
   const [taskForm, setTaskForm] = useState(emptyTask);
   const [memberEmail, setMemberEmail] = useState('');
   const [reports, setReports] = useState({});
+  const [commentText, setCommentText] = useState({});
+  const [subtaskTitle, setSubtaskTitle] = useState({});
+  const [search, setSearch] = useState('');
+  const [filterPriority, setFilterPriority] = useState('');
+  const [filterAssignee, setFilterAssignee] = useState('');
 
   const load = () => api.get(`/projects/${id}`).then((response) => setProject(response.data));
 
@@ -64,6 +70,35 @@ export default function ProjectDetail() {
       load();
     } catch (err) {
       toast.error(err.response?.data?.error || 'Could not delete task');
+    }
+  };
+
+  const deleteProject = async () => {
+    if (!confirm('Delete this project permanently? This cannot be undone.')) return;
+    try {
+      await api.delete(`/projects/${id}`);
+      toast.success('Project deleted');
+      window.location.href = '/projects';
+    } catch (err) {
+      toast.error('Could not delete project');
+    }
+  };
+
+  const onDragEnd = async (result) => {
+    if (!result.destination) return;
+    const { source, destination, draggableId } = result;
+    if (source.droppableId !== destination.droppableId) {
+      const newStatus = destination.droppableId;
+      setProject(p => ({
+        ...p,
+        tasks: p.tasks.map(t => t.id === draggableId ? { ...t, status: newStatus } : t)
+      }));
+      try {
+        await api.patch(`/tasks/${draggableId}`, { status: newStatus });
+      } catch (err) {
+        toast.error('Could not move task');
+        load();
+      }
     }
   };
 
@@ -140,6 +175,43 @@ export default function ProjectDetail() {
     }
   };
 
+  const viewFile = async (taskId, attachmentId, mimeType, filename) => {
+    try {
+      const res = await api.get(`/tasks/${taskId}/attachments/${attachmentId}`);
+      const link = document.createElement('a');
+      link.href = `data:${mimeType};base64,${res.data.data}`;
+      link.download = filename;
+      link.click();
+    } catch (err) {
+      toast.error('Could not download file');
+    }
+  };
+
+  const addComment = async (taskId) => {
+    if (!commentText[taskId]?.trim()) return;
+    try {
+      await api.post(`/tasks/${taskId}/comments`, { text: commentText[taskId] });
+      setCommentText(current => ({ ...current, [taskId]: '' }));
+      load();
+    } catch (err) { toast.error('Could not post comment'); }
+  };
+
+  const addSubtask = async (taskId) => {
+    if (!subtaskTitle[taskId]?.trim()) return;
+    try {
+      await api.post(`/tasks/${taskId}/subtasks`, { title: subtaskTitle[taskId] });
+      setSubtaskTitle(current => ({ ...current, [taskId]: '' }));
+      load();
+    } catch (err) { toast.error('Could not create subtask'); }
+  };
+
+  const toggleSubtask = async (taskId, subId, isDone) => {
+    try {
+      await api.patch(`/tasks/${taskId}/subtasks/${subId}`, { isDone });
+      load();
+    } catch (err) { toast.error('Could not update subtask'); }
+  };
+
   if (!project) return <div className="text-white/70">Loading project...</div>;
 
   const done = project.tasks.filter((task) => task.status === 'DONE').length;
@@ -151,8 +223,13 @@ export default function ProjectDetail() {
       <section className="overflow-hidden rounded-lg border border-white/10 bg-white shadow-2xl">
         <div className="grid gap-0 lg:grid-cols-[1.2fr_0.8fr]">
           <div className="p-7 md:p-8">
-            <p className="text-xs font-bold uppercase tracking-[0.22em] text-blue-600">{project.myRole} access</p>
-            <h1 className="mt-3 text-4xl font-black tracking-tight md:text-5xl">{project.name}</h1>
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.22em] text-blue-600">{project.myRole} access</p>
+                <h1 className="mt-3 text-4xl font-black tracking-tight md:text-5xl">{project.name}</h1>
+              </div>
+              {isAdmin && <button onClick={deleteProject} title="Delete Project" className="rounded p-2 text-red-500 hover:bg-red-50"><Trash2 size={20} /></button>}
+            </div>
             <p className="mt-3 max-w-2xl text-gray-500">{project.description || 'No description yet'}</p>
             <div className="mt-6 flex flex-wrap gap-2">
               {project.members.map((member) => (
@@ -228,18 +305,53 @@ export default function ProjectDetail() {
         </div>
       </section>}
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        {STATUSES.map((status) => {
-          const tasks = project.tasks.filter((task) => task.status === status);
-          return (
-            <div key={status} className="kanban-column p-4">
+      <div className="mb-4 flex flex-wrap gap-3 rounded-lg border border-gray-100 bg-white p-4">
+        <div className="flex flex-1 items-center gap-2 rounded-lg bg-gray-50 px-3 py-2">
+          <Search size={16} className="text-gray-400" />
+          <input className="w-full bg-transparent text-sm outline-none" placeholder="Search tasks..." value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
+        <div className="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-2">
+          <Filter size={16} className="text-gray-400" />
+          <select className="bg-transparent text-sm font-bold outline-none" value={filterPriority} onChange={e => setFilterPriority(e.target.value)}>
+            <option value="">Any Priority</option>
+            <option>HIGH</option>
+            <option>MEDIUM</option>
+            <option>LOW</option>
+          </select>
+        </div>
+        <div className="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-2">
+          <Users size={16} className="text-gray-400" />
+          <select className="bg-transparent text-sm font-bold outline-none" value={filterAssignee} onChange={e => setFilterAssignee(e.target.value)}>
+            <option value="">Anyone</option>
+            <option value="UNASSIGNED">Unassigned</option>
+            {project.members.map(m => <option key={m.user.id} value={m.user.id}>{m.user.name}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <DragDropContext onDragEnd={onDragEnd}>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          {STATUSES.map((status) => {
+            const filteredTasks = project.tasks.filter(task => {
+              if (search && !task.title.toLowerCase().includes(search.toLowerCase())) return false;
+              if (filterPriority && task.priority !== filterPriority) return false;
+              if (filterAssignee === 'UNASSIGNED' && task.assigneeId) return false;
+              if (filterAssignee && filterAssignee !== 'UNASSIGNED' && task.assigneeId !== filterAssignee) return false;
+              return task.status === status;
+            });
+            return (
+              <Droppable key={status} droppableId={status}>
+                {(provided) => (
+                  <div ref={provided.innerRef} {...provided.droppableProps} className="kanban-column p-4">
               <h3 className="mb-4 flex items-center justify-between font-black">
                 <span className="flex items-center gap-2">{statusIcon(status)} {status.replace('_', ' ')}</span>
-                <span className="rounded-full bg-white px-2.5 py-1 text-xs text-gray-500">{tasks.length}</span>
+                <span className="rounded-full bg-white px-2.5 py-1 text-xs text-gray-500">{filteredTasks.length}</span>
               </h3>
-              <div className="space-y-3">
-                {tasks.map((task) => (
-                  <div key={task.id} className="task-card p-4">
+              <div className="space-y-3 min-h-[100px]">
+                {filteredTasks.map((task, index) => (
+                  <Draggable key={task.id} draggableId={task.id} index={index}>
+                    {(provided, snapshot) => (
+                      <div ref={provided.innerRef} {...provided.draggableProps} {...provided.dragHandleProps} className={`task-card p-4 ${snapshot.isDragging ? 'shadow-2xl ring-2 ring-blue-500' : ''}`}>
                     <div className="mb-3 flex items-start justify-between gap-2">
                       <h4 className="font-black leading-snug">{task.title}</h4>
                       {canManagePeople && <button onClick={() => deleteTask(task.id)} className="rounded p-1 text-gray-300 hover:bg-red-50 hover:text-red-500"><Trash2 size={14} /></button>}
@@ -287,7 +399,11 @@ export default function ProjectDetail() {
                         </label>
                         {task.attachments?.length > 0 && (
                           <div className="space-y-1 text-xs text-gray-500">
-                            {task.attachments.map((file) => <div key={file.id}>File: {file.filename} ({Math.round(file.size / 1024)} KB)</div>)}
+                            {task.attachments.map((file) => (
+                              <button key={file.id} type="button" onClick={() => viewFile(task.id, file.id, file.mimeType, file.filename)} className="block w-full cursor-pointer text-left text-blue-600 hover:underline">
+                                File: {file.filename} ({Math.round(file.size / 1024)} KB)
+                              </button>
+                            ))}
                           </div>
                         )}
                         {task.reports?.length > 0 && (
@@ -299,15 +415,49 @@ export default function ProjectDetail() {
                             ))}
                           </div>
                         )}
+
+                        <div className="mt-4 border-t border-gray-200 pt-3">
+                          <h5 className="mb-2 text-xs font-black text-gray-700 flex items-center gap-1"><CheckSquare size={13} /> Subtasks</h5>
+                          {task.subtasks?.map(sub => (
+                            <div key={sub.id} className="flex items-center gap-2 mb-1">
+                              <input type="checkbox" checked={sub.isDone} onChange={e => toggleSubtask(task.id, sub.id, e.target.checked)} className="rounded" />
+                              <span className={`text-sm ${sub.isDone ? 'line-through text-gray-400' : 'text-gray-700'}`}>{sub.title}</span>
+                            </div>
+                          ))}
+                          <div className="flex gap-2 mt-2">
+                            <input className="input-field text-xs p-1.5 flex-1" placeholder="New subtask..." value={subtaskTitle[task.id] || ''} onChange={e => setSubtaskTitle(c => ({...c, [task.id]: e.target.value}))} onKeyDown={e => e.key === 'Enter' && addSubtask(task.id)} />
+                            <button type="button" onClick={() => addSubtask(task.id)} className="btn-secondary px-2 text-xs">Add</button>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 border-t border-gray-200 pt-3">
+                          <h5 className="mb-2 text-xs font-black text-gray-700 flex items-center gap-1"><MessageSquare size={13} /> Comments</h5>
+                          {task.comments?.map(comment => (
+                            <div key={comment.id} className="mb-2 rounded bg-white p-2">
+                              <div className="text-[10px] font-bold text-gray-400">{comment.user.name}</div>
+                              <div className="text-xs text-gray-700">{comment.text}</div>
+                            </div>
+                          ))}
+                          <div className="flex gap-2 mt-2">
+                            <input className="input-field text-xs p-1.5 flex-1" placeholder="Write a comment..." value={commentText[task.id] || ''} onChange={e => setCommentText(c => ({...c, [task.id]: e.target.value}))} onKeyDown={e => e.key === 'Enter' && addComment(task.id)} />
+                            <button type="button" onClick={() => addComment(task.id)} className="btn-secondary px-2 text-xs">Post</button>
+                          </div>
+                        </div>
                       </div>
                     </details>
                   </div>
+                )}
+                </Draggable>
                 ))}
+                {provided.placeholder}
               </div>
             </div>
+            )}
+            </Droppable>
           );
         })}
-      </div>
+        </div>
+      </DragDropContext>
 
       {showTask && (
         <Modal onClose={() => setShowTask(false)}>
