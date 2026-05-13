@@ -47,6 +47,15 @@ export default function ProjectDetail() {
     }
   };
 
+  const updateAssignee = async (taskId, assigneeId) => {
+    try {
+      await api.patch(`/tasks/${taskId}`, { assigneeId: assigneeId || null });
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Could not assign task');
+    }
+  };
+
   const deleteTask = async (taskId) => {
     if (!confirm('Delete this task?')) return;
     try {
@@ -253,9 +262,17 @@ export default function ProjectDetail() {
                         {task.technologies && <p><b>Tech:</b> {task.technologies}</p>}
                       </div>
                     )}
-                    <select value={task.status} onChange={(event) => updateStatus(task.id, event.target.value)} className="input-field p-2 text-xs font-bold">
-                      {STATUSES.map((item) => <option key={item} value={item}>{item.replace('_', ' ')}</option>)}
-                    </select>
+                    <div className="flex gap-2">
+                      <select value={task.status} onChange={(event) => updateStatus(task.id, event.target.value)} className="input-field p-2 text-xs font-bold flex-1">
+                        {STATUSES.map((item) => <option key={item} value={item}>{item.replace('_', ' ')}</option>)}
+                      </select>
+                      {canManagePeople && (
+                        <select value={task.assignee?.id || ''} onChange={(event) => updateAssignee(task.id, event.target.value)} className="input-field p-2 text-xs font-bold flex-1">
+                          <option value="">Unassigned</option>
+                          {project.members.map((member) => <option key={member.user.id} value={member.user.id}>{member.user.name}</option>)}
+                        </select>
+                      )}
+                    </div>
                     <details className="mt-3 rounded-lg border border-gray-100 bg-gray-50 p-3">
                       <summary className="cursor-pointer text-xs font-black text-gray-700">Work update, issues, tech, files</summary>
                       <div className="mt-3 grid gap-2">
